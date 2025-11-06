@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JSON Formatter</title>
+  <!-- Tailwind play CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18 UMD + Babel for in-browser JSX -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const {useEffect, useMemo, useState} = React;
+
+    function sortObjectKeysDeep(value) {
+      if (Array.isArray(value)) return value.map(sortObjectKeysDeep);
+      if (value && typeof value === "object") {
+        return Object.keys(value).sort().reduce((acc, k) => {
+          acc[k] = sortObjectKeysDeep(value[k]);
+          return acc;
+        }, {});
+      }
+      return value;
+    }
+
+    function safeParse(jsonText) {
+      try {
+        const cleaned = jsonText.replace(/^\uFEFF/, "").trim();
+        const parsed = JSON.parse(cleaned);
+        return { ok: true, value: parsed };
+      } catch (err) {
+        return { ok: false, error: err };
+      }
+    }
+
+    const KEY_COLOR_CLASSES = [
+      "text-sky-700","text-emerald-700","text-amber-700","text-purple-700",
+      "text-rose-700","text-indigo-700","text-lime-700","text-fuchsia-700",
+    ];
+    const levelColor = (level) => KEY_COLOR_CLASSES[((level % KEY_COLOR_CLASSES.length)+KEY_COLOR_CLASSES.length)%KEY_COLOR_CLASSES.length];
+
+    function JsonNode({ k, value, path, defaultExpanded, level = 0 }) {
+      const isObj = value && typeof value === "object";
+      const isArr = Array.isArray(value);
+      const [open, setOpen] = useState(defaultExpanded);
+
+      useEffect(() => setOpen(defaultExpanded), [defaultExpanded]);
+
+      const indent = { paddingLeft: `${level * 20}px` };
+      const keyLabel = k !== undefined ? (
+        <span className={levelColor(level)}>
+          <span className="text-gray-400">"</span>{String(k)}<span className="text-gray-400">"</span>
+        </span>
+      ) : null;
+
+      if (!isObj) {
+        let display;
+        const t = typeof value;
+        if (t === "string") display = <span className="text-emerald-700">"{value}"</span>;
+        else if (t === "number") display = <span className="text-blue-700">{String(value)}</span>;
+        else if (t === "boolean") display = <span className="text-purple-700">{String(value)}</span>;
+        else if (value === null) display = <span className="text-gray-500">null</span>;
+        else display = <span>{String(value)}</span>;
+        return (
+          <div style={indent} className="leading-7 text-base">
+            {keyLabel && <span>{keyLabel}: </span>}
+            {display}
+          </div>
+        );
+      }
+
+      const keys = isArr ? value.map((_, i) => i) : Object.keys(value);
+      const braceOpen = isArr ? "[" : "{";
+      const braceClose = isArr ? "]" : "}";
+      const count = keys.length;
+
+      return (
+        <div>
+          <div style={indent} className="group flex items-center gap-2 leading-7 text-base">
+            <button
+              className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded border text-sm text-gray-600 hover:bg-gray-50"
+              onClick={() => setOpen(v => !v)}
+              aria-label={open ? "Collapse" : "Expand"}
+            >{open ? "–" : "+"}</button>
+            {keyLabel && <span>{keyLabel}: </span>}
+            <span className="text-gray-400">{braceOpen}</span>
+            <span className="ml-1 text-xs text-gray-400">{count} {isArr ? "items" : "keys"}</span>
+            <span className="text-gray-400">{open ? "" : " … "}{braceClose}</span>
+          </div>
+          {open && (
+            <div>
+              {keys.map((childKey) => (
+                <JsonNode
+                  key={`${path}.${childKey}`}
+                  k={isArr ? undefined : childKey}
+                  value={isArr ? value[childKey] : value[childKey]}
+                  path={`${path}.${childKey}`}
+                  defaultExpanded={defaultExpanded}
+                  level={level + 1}
+                />
+              ))}
+              <div style={indent} className="pl-4 text-gray-400">{braceClose}</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const [text, setText] = useState('{"hello": "world", "items": [1,3,2], "nested": { "b": 2, "a": 1 }}');
+      const [expandAll, setExpandAll] = useState(true);
+      const validation = useMemo(() => safeParse(text), [text]);
+      const parsedValue = useMemo(() => validation.ok ? sortObjectKeysDeep(validation.value) : null, [validation]);
+
+      return (
+        <div className="min-h-screen w-full bg-gray-50 text-gray-900 p-2 sm:p-6">
+          <div className="mx-auto w-full max-w-[95vw]">
+            <h1 className="mb-3 text-3xl font-semibold text-center">JSON Formatter</h1>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="flex flex-col">
+                <textarea
+                  spellCheck={false}
+                  className={"h-[85vh] w-full resize-none rounded-xl border bg-white p-4 font-mono text-base outline-none shadow-sm " +
+                    (validation.ok ? "border-gray-200" : "border-red-300")}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Paste or type JSON here..."
+                />
+              </div>
+              <div className="flex h-[85vh] flex-col rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-base text-gray-700 font-medium">Preview</div>
+                  <div className="flex items-center gap-3">
+                    <button className="rounded-lg border px-3 py-1 text-sm hover:bg-gray-50" onClick={() => setExpandAll(true)}>Expand all</button>
+                    <button className="rounded-lg border px-3 py-1 text-sm hover:bg-gray-50" onClick={() => setExpandAll(false)}>Collapse all</button>
+                  </div>
+                </div>
+                <div className="relative grow overflow-auto rounded-xl border bg-gray-50 p-3">
+                  {!validation.ok && (
+                    <div className="absolute left-2 top-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-sm text-red-700">
+                      Invalid JSON: {validation.error?.message}
+                    </div>
+                  )}
+                  {parsedValue && (
+                    <div className="font-mono text-base leading-7">
+                      <JsonNode k={undefined} value={parsedValue} path="$" defaultExpanded={expandAll} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
